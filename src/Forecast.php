@@ -2,46 +2,42 @@
 
 namespace Codium\CleanCode;
 
-use GuzzleHttp\Client;
+use Codium\CleanCode\providers\MetaWeatherProvider;
+use DateTime;
 
 class Forecast
 {
-    public function predict(string &$city, \DateTime $datetime = null, bool $wind = false): string
+    const EMPTY_STRING = "";
+    const VALID_DATE = "+6 days 00:00:00";
+    const DATE_FORMAT = 'Y-m-d';
+
+    public function predict(string &$city, DateTime $datetime = null, bool $wind = false): string
     {
         // When date is not provided we look for the current prediction
         if (!$datetime) {
-            $datetime = new \DateTime();
+            $datetime = new DateTime();
         }
 
-        // If there are predictions
-        if ($datetime < new \DateTime("+6 days 00:00:00")) {
+        $is_date_valid = $datetime < new DateTime(self::VALID_DATE);
+        if (!$is_date_valid) {
+            return self::EMPTY_STRING;
+        }
 
+        // Find city data on metawheather
+        $weather_provider = new MetaWeatherProvider();
+        $city_data = $weather_provider->getCity($city);
+        $city = $city_data->getWoeid();
 
-            // Create a Guzzle Http Client
-            $client = new Client();
+        // Find the predictions for the city
+        $results = $weather_provider->getWeatherData($city_data->getWoeid());
+        foreach ($results as $result) {
 
-            // Find the id of the city on metawheather
-            $woeid = json_decode($client->get("https://www.metaweather.com/api/location/search/?query=$city")->getBody()->getContents(),
-                true)[0]['woeid'];
-            $city = $woeid;
-
-            // Find the predictions for the city
-            $results = json_decode($client->get("https://www.metaweather.com/api/location/$woeid")->getBody()->getContents(),
-                true)['consolidated_weather'];
-            foreach ($results as $result) {
-
-                // When the date is the expected
-                if ($result["applicable_date"] == $datetime->format('Y-m-d')) {
-                    // If we have to return the wind information
-                    if ($wind) {
-                        return $result['wind_speed'];
-                    } else {
-                        return $result['weather_state_name'];
-                    }
-                }
+            // When the date is the expected
+            if ($result->getApplicableDate() == $datetime->format(self::DATE_FORMAT)) {
+                // If we have to return the wind information
+                return $wind ? $result->getWindSpeed() : $result->getWeatherStateName();
             }
-        } else {
-            return "";
         }
+        return self::EMPTY_STRING;
     }
 }
